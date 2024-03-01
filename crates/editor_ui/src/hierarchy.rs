@@ -60,7 +60,7 @@ pub type HierarchyQueryIter<'a> = (
 pub fn show_hierarchy(
     mut commands: Commands,
     query: Query<HierarchyQueryIter, With<PrefabMarker>>,
-    all_entites: Query<HierarchyQueryIter>,
+    all_entities: Query<HierarchyQueryIter>,
     mut selected: Query<Entity, With<Selected>>,
     mut clone_events: EventWriter<CloneEvent>,
     mut ui: NonSendMut<EditorUiRef>,
@@ -69,7 +69,7 @@ pub fn show_hierarchy(
     mut prefab_made: EventWriter<PrefabMade>,
 ) {
     let mut all: Vec<_> = if state.show_editor_entities {
-        all_entites.iter().collect()
+        all_entities.iter().collect()
     } else {
         query.iter().collect()
     };
@@ -90,7 +90,7 @@ pub fn show_hierarchy(
                     draw_entity::<()>(
                         &mut commands,
                         ui,
-                        &all_entites,
+                        &all_entities,
                         *entity,
                         &mut selected,
                         &mut clone_events,
@@ -149,9 +149,9 @@ fn draw_entity<F: ReadOnlyWorldQuery>(
             true,
         )
         .show_header(ui, |ui| {
-            let responce = ui.selectable_label(is_selected, entity_name);
-            let is_clicked = responce.clicked();
-            responce.context_menu(|ui| {
+            let response = ui.selectable_label(is_selected, entity_name);
+            let is_clicked = response.clicked();
+            response.context_menu(|ui| {
                 hierarchy_entity_context(
                     ui,
                     commands,

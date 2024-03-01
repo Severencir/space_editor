@@ -5,6 +5,7 @@ pub mod hotkeys;
 mod load;
 pub mod selected;
 pub mod task_storage;
+pub mod toast;
 
 pub mod prelude {
     pub use super::*;
@@ -84,7 +85,7 @@ fn editor_event_listener(
                     load_server.scene = Some(handle);
                     info!("Loading prefab by editor event from file {}", path);
                 }
-                EditorPrefabPath::MemoryCahce => {
+                EditorPrefabPath::MemoryCache => {
                     load_server.scene = cache.scene.clone();
                     info!("Loading prefab by editor event from memory cache");
                 }

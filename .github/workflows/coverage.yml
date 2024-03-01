@@ -3,6 +3,8 @@ name: coverage
 on:
   pull_request:
     branches: [ "*" ]
+  push:
+    branches: [ main ]
 
 jobs:
   coverage:
@@ -23,4 +25,5 @@ jobs:
       uses: codecov/codecov-action@v3
       with:
         files: lcov.info
+        token: ${{ secrets.CODECOV_TOKEN }}
         fail_ci_if_error: true

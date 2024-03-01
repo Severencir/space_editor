@@ -1,6 +1,6 @@
 #![allow(clippy::type_complexity)]
 
-//This module contains ui logics, which will be work through events with editor core module and prefab module
+/// This module contains ui logics, which will be work through events with editor core module and prefab module
 mod mouse_check;
 
 /// This module will be used to create Unity like project file dialog. Currently NOT USED
@@ -89,6 +89,7 @@ use prelude::{
     GameModeSettings, GameViewTab, MeshlessVisualizerPlugin, NewTabBehaviour, NewWindowSettings,
     ScheduleEditorTab, ScheduleEditorTabStorage, SpaceHierarchyPlugin, SpaceInspectorPlugin,
 };
+use space_editor_core::toast::ToastUiPlugin;
 use space_prefab::prelude::*;
 use space_shared::{
     ext::bevy_inspector_egui::{quick::WorldInspectorPlugin, DefaultInspectorConfigPlugin},
@@ -148,6 +149,7 @@ pub struct EditorPluginGroup;
 impl PluginGroup for EditorPluginGroup {
     fn build(self) -> bevy::app::PluginGroupBuilder {
         let mut res = PluginGroupBuilder::start::<Self>()
+            .add(ToastUiPlugin)
             .add(UndoPlugin)
             .add(SyncUndoMarkersPlugin::<PrefabMarker>::default())
             .add(PrefabPlugin)
@@ -244,7 +246,7 @@ type AutoAddQueryFilter = (
 
 fn save_prefab_before_play(mut editor_events: EventWriter<space_shared::EditorEvent>) {
     editor_events.send(space_shared::EditorEvent::Save(
-        space_shared::EditorPrefabPath::MemoryCahce,
+        space_shared::EditorPrefabPath::MemoryCache,
     ));
 }
 
@@ -272,7 +274,7 @@ fn clear_and_load_on_start(
             info!("Loading prefab from file {}", path);
             load_server.scene = Some(assets.load(format!("{}.scn.ron", path)));
         }
-        space_shared::EditorPrefabPath::MemoryCahce => {
+        space_shared::EditorPrefabPath::MemoryCache => {
             info!("Loading prefab from cache");
             load_server.scene = cache.scene.clone();
         }

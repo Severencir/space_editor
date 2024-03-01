@@ -12,6 +12,9 @@ pub mod prelude {
     };
 }
 
+pub mod asset_fs;
+pub(crate) mod gizmos;
+
 /// Component Marker to display entity in Editor
 #[derive(Component, Default, Clone, Reflect)]
 #[reflect(Component)]
@@ -28,7 +31,7 @@ pub struct EditorCameraMarker;
 pub enum EditorState {
     /// Editor Loading assets
     Loading,
-    /// Diplays Editor / Editor mode
+    /// Displays Editor / Editor mode
     Editor,
     /// Editor is loading the game
     GamePrepare,
@@ -55,7 +58,7 @@ pub struct PrefabMemoryCache {
 /// How/Where porefab data is stored
 pub enum EditorPrefabPath {
     File(String),
-    MemoryCahce,
+    MemoryCache,
 }
 
 #[derive(Event)]

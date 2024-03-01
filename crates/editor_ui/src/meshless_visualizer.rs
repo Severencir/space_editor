@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use bevy::{prelude::*, render::view::RenderLayers, utils::HashMap};
 use bevy_asset_loader::{
     asset_collection::AssetCollection,
@@ -16,28 +17,48 @@ use space_prefab::editor_registry::EditorRegistryExt;
 use space_shared::*;
 
 use crate::LAST_RENDER_LAYER;
-use space_editor_core::selected::Selected;
+use space_editor_core::{
+    selected::Selected,
+    toast::{ToastKind, ToastMessage},
+};
 
 #[derive(Default)]
 pub struct MeshlessVisualizerPlugin;
 
 impl Plugin for MeshlessVisualizerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_loading_state(
-            LoadingState::new(EditorState::Loading)
-                .continue_to_state(EditorState::Editor)
-                .load_collection::<EditorIconAssets>()
-                .register_dynamic_asset_collection::<EditorIconAssetCollection>()
-                .with_dynamic_assets_file::<EditorIconAssetCollection>("icons/editor.icons.ron"),
-        )
+        if std::fs::metadata("assets/icons/").is_ok() {
+            app.add_loading_state(
+                LoadingState::new(EditorState::Loading)
+                    .continue_to_state(EditorState::Editor)
+                    .load_collection::<EditorIconAssets>()
+                    .register_dynamic_asset_collection::<EditorIconAssetCollection>()
+                    .with_dynamic_assets_file::<EditorIconAssetCollection>(
+                        "icons/editor.icons.ron",
+                    ),
+            )
+            .add_plugins(RonAssetPlugin::<EditorIconAssetCollection>::new(&[
+                "icons.ron",
+            ]))
+        } else {
+            app.world.send_event(ToastMessage::new(
+                "Failed to dynamic load assets. Loading defaults from memory",
+                ToastKind::Error,
+            ));
+            error!("Failed to dynamic load assets. Loading defaults from memory");
+            app.add_systems(OnEnter(EditorState::Editor), register_assets)
+                .add_systems(
+                    Startup,
+                    |mut next_editor_state: ResMut<NextState<EditorState>>| {
+                        next_editor_state.set(EditorState::Editor);
+                    },
+                )
+        }
         .insert_resource(RaycastBackendSettings {
             raycast_visibility: RaycastVisibility::Ignore,
             ..Default::default()
         })
         .add_plugins(BillboardPlugin)
-        .add_plugins(RonAssetPlugin::<EditorIconAssetCollection>::new(&[
-            "icons.ron",
-        ]))
         .add_systems(
             Update,
             (visualize_meshless, visualize_custom_meshless).in_set(EditorSet::Editor),
@@ -104,6 +125,46 @@ pub struct EditorIconAssets {
     pub sphere: Handle<Mesh>,
 }
 
+fn register_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
+    use space_shared::asset_fs::*;
+    let assets = EditorIconAssets {
+        unknown: asset_server.add(
+            create_unknown_image()
+                .inspect_err(|err| error!("failed to load image `Unknown`: {err}"))
+                .unwrap(),
+        ),
+        directional: asset_server.add(
+            create_dir_light_image()
+                .inspect_err(|err| error!("failed to load image `DirectionalLight`: {err}"))
+                .unwrap(),
+        ),
+        point: asset_server.add(
+            create_point_light_image()
+                .inspect_err(|err| error!("failed to load image `PointLight`: {err}"))
+                .unwrap(),
+        ),
+        spot: asset_server.add(
+            create_spot_light_image()
+                .inspect_err(|err| error!("failed to load image `SpotLight`: {err}"))
+                .unwrap(),
+        ),
+        camera: asset_server.add(
+            create_camera_image()
+                .inspect_err(|err| error!("failed to load image `Camera`: {err}"))
+                .unwrap(),
+        ),
+        square: asset_server.add(shape::Quad::new(Vec2::splat(2.)).into()),
+        sphere: asset_server.add(
+            Mesh::try_from(shape::Icosphere {
+                radius: 0.75,
+                ..default()
+            })
+            .unwrap(),
+        ),
+    };
+    commands.insert_resource(assets);
+}
+
 #[derive(serde::Deserialize, Asset, TypePath)]
 pub struct EditorIconAssetCollection(HashMap<String, EditorIconAssetType>);
 
@@ -114,6 +175,7 @@ impl DynamicAssetCollection for EditorIconAssetCollection {
         }
     }
 }
+
 /// Supported types of icons within the editor to be loaded in
 #[derive(serde::Deserialize, Debug, Clone)]
 enum EditorIconAssetType {
@@ -139,7 +201,7 @@ impl DynamicAsset for EditorIconAssetType {
         let cell = world.cell();
         let asset_server = cell
             .get_resource::<AssetServer>()
-            .expect("Failed to get the AssetServer");
+            .ok_or_else(|| anyhow!("Failed to get the AssetServer"))?;
         match self {
             Self::Image { path } => {
                 let handle = asset_server.load::<Image>(path);
@@ -148,7 +210,7 @@ impl DynamicAsset for EditorIconAssetType {
             Self::Quad { size } => {
                 let mut meshes = cell
                     .get_resource_mut::<Assets<Mesh>>()
-                    .expect("Failed to get Mesh Assets");
+                    .ok_or_else(|| anyhow!("Failed to get Mesh Assets"))?;
                 let handle = meshes
                     .add(Mesh::from(shape::Quad {
                         size: *size,
@@ -160,7 +222,7 @@ impl DynamicAsset for EditorIconAssetType {
             Self::Sphere { radius } => {
                 let mut meshes = cell
                     .get_resource_mut::<Assets<Mesh>>()
-                    .expect("Failed to get Mesh Assets");
+                    .ok_or_else(|| anyhow!("Failed to get Mesh Assets"))?;
                 let handle = meshes
                     .add(
                         Mesh::try_from(shape::Icosphere {
@@ -280,7 +342,7 @@ pub fn visualize_meshless(
 /// Additionally, the user can either choose their own mesh and material to use or default to the white sphere
 pub fn visualize_custom_meshless(
     mut commands: Commands,
-    ass: Res<AssetServer>,
+    asset_server: Res<AssetServer>,
     objects: Query<(Entity, &CustomMeshless, Option<&Children>)>,
     editor_icons: Res<EditorIconAssets>,
     visualized: Query<&BillboardMeshHandle>,
@@ -295,38 +357,39 @@ pub fn visualize_custom_meshless(
                 MeshlessModel::Billboard {
                     ref mesh,
                     ref texture,
-                } => commands
-                    .spawn((
-                        BillboardTextureBundle {
-                            mesh: BillboardMeshHandle(mesh.clone().unwrap_or_else(|| {
-                                ass.add(shape::Quad::new(Vec2::splat(2.)).into())
-                            })),
-                            texture: BillboardTextureHandle(
-                                texture
-                                    .clone()
-                                    .unwrap_or_else(|| ass.load("icons/unknown.png")),
-                            ),
-                            ..default()
-                        },
-                        RenderLayers::layer(LAST_RENDER_LAYER),
-                    ))
-                    .with_children(|adult| {
-                        adult.spawn((
-                            MaterialMeshBundle::<StandardMaterial> {
-                                mesh: editor_icons.sphere.clone(),
-                                visibility: Visibility::Hidden,
+                } => {
+                    let Some(texture) = texture.clone() else {
+                        return;
+                    };
+                    commands
+                        .spawn((
+                            BillboardTextureBundle {
+                                mesh: BillboardMeshHandle(mesh.clone().unwrap_or_else(|| {
+                                    asset_server.add(shape::Quad::new(Vec2::splat(2.)).into())
+                                })),
+                                texture: BillboardTextureHandle(texture),
                                 ..default()
                             },
-                            SelectParent { parent: entity },
-                        ));
-                    })
-                    .id(),
+                            RenderLayers::layer(LAST_RENDER_LAYER),
+                        ))
+                        .with_children(|adult| {
+                            adult.spawn((
+                                MaterialMeshBundle::<StandardMaterial> {
+                                    mesh: editor_icons.sphere.clone(),
+                                    visibility: Visibility::Hidden,
+                                    ..default()
+                                },
+                                SelectParent { parent: entity },
+                            ));
+                        })
+                        .id()
+                }
                 MeshlessModel::Object { mesh, material } => commands
                     .spawn((
                         MaterialMeshBundle {
                             mesh: mesh.clone().unwrap_or_else(|| editor_icons.sphere.clone()),
                             material: material.clone().unwrap_or_else(|| {
-                                ass.add(StandardMaterial {
+                                asset_server.add(StandardMaterial {
                                     unlit: true,
                                     ..default()
                                 })
@@ -459,5 +522,43 @@ pub fn draw_light_gizmo(
                 _ => unreachable!(),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn register_assets_as_resource() {
+        let mut app = App::new();
+
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ImagePlugin::default(),
+        ));
+        app.init_asset::<bevy::render::mesh::Mesh>();
+        app.add_systems(PreUpdate, register_assets);
+        app.update();
+
+        let icons = app.world.get_resource::<EditorIconAssets>();
+
+        assert!(icons.is_some());
+    }
+
+    #[test]
+    fn clears_objects_with_billboard_handles() {
+        let mut app = App::new();
+        app.add_systems(Startup, |mut commands: Commands| {
+            commands.spawn_empty();
+            commands.spawn(BillboardTextureBundle::default());
+        });
+        app.add_systems(Update, clean_meshless);
+        app.update();
+
+        let mut query = app.world.query::<Entity>();
+
+        assert_eq!(query.iter(&app.world).count(), 1);
     }
 }
