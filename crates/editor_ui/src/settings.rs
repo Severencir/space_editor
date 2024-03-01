@@ -3,14 +3,15 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use bevy_egui_next::*;
-use space_editor_core::hotkeys::AllHotkeys;
-use space_shared::ext::bevy_inspector_egui::bevy_inspector;
+use space_editor_core::{hotkeys::AllHotkeys, EditorLoadSet};
+use space_prefab::save::PrefabsPath;
+use space_shared::{ext::bevy_inspector_egui::bevy_inspector, EditorSet};
 use space_undo::ChangeChainSettings;
 
 #[cfg(feature = "persistence_editor")]
 use space_persistence::*;
 
-use crate::sizing::{IconSize, Sizing};
+use crate::{colors::STROKE_COLOR, sizing::{IconSize, Sizing}};
 
 use super::{
     editor_tab::{EditorTab, EditorTabName},
@@ -37,6 +38,10 @@ impl Plugin for SettingsWindowPlugin {
             .register_type::<IconSize>()
             .register_type::<NewTabBehaviour>()
             .init_resource::<NewWindowSettings>();
+        app.add_systems(
+            Update,
+            prefab_path_dialog_system.before(EditorLoadSet).in_set(EditorSet::Editor),
+        );
         #[cfg(feature = "persistence_editor")]
         {
             app.persistence_resource::<NewWindowSettings>()
@@ -126,6 +131,7 @@ impl ToString for NewTabBehaviour {
         .to_string()
     }
 }
+
 
 #[derive(Default, Resource, Reflect)]
 #[reflect(Resource)]
@@ -292,9 +298,26 @@ impl EditorTab for SettingsWindow {
                 (*block)(ui, commands, world);
             }
         }
+        ui.add_space(12.);
+        ui.heading("Prefabs Path");
+        let prefabs_path = &mut world.resource_mut::<PrefabsPath>();
+        prefabs_path.ui(ui, IconSize::Small.to_size(), STROKE_COLOR);
+        
     }
 
     fn title(&self) -> egui::WidgetText {
         "Settings".into()
+    }
+}
+
+fn prefab_path_dialog_system(
+    mut ctxs: EguiContexts,
+    mut prefabs_path: ResMut<PrefabsPath>,
+) {
+    let ctx = ctxs.ctx_mut();
+    if let Some(dialog) = prefabs_path.dialog.as_mut() {
+        if dialog.show(ctx).selected(){
+            prefabs_path.path = dialog.directory().to_string_lossy().to_string();
+        }
     }
 }

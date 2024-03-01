@@ -4,7 +4,7 @@ use std::sync::Arc;
 use bevy::{ecs::query::ReadOnlyWorldQuery, prelude::*, utils::HashMap};
 use bevy_egui_next::{egui::collapsing_header::CollapsingState, *};
 use space_editor_core::prelude::*;
-use space_prefab::editor_registry::EditorRegistry;
+use space_prefab::{editor_registry::EditorRegistry, save::PrefabMade};
 use space_undo::{AddedEntity, NewChange, RemovedEntity, UndoSet};
 
 use space_shared::*;
@@ -26,7 +26,6 @@ impl Plugin for SpaceHierarchyPlugin {
         if !app.is_plugin_added::<SelectedPlugin>() {
             app.add_plugins(SelectedPlugin);
         }
-
         app.init_resource::<HierarchyTabState>();
         app.editor_tab(EditorTabName::Hierarchy, "Hierarchy".into(), show_hierarchy);
 
@@ -56,6 +55,7 @@ pub type HierarchyQueryIter<'a> = (
     Option<&'a Parent>,
 );
 
+
 /// System to show hierarchy
 pub fn show_hierarchy(
     mut commands: Commands,
@@ -66,6 +66,7 @@ pub fn show_hierarchy(
     mut ui: NonSendMut<EditorUiRef>,
     mut changes: EventWriter<NewChange>,
     mut state: ResMut<HierarchyTabState>,
+    mut prefab_made: EventWriter<PrefabMade>,
 ) {
     let mut all: Vec<_> = if state.show_editor_entities {
         all_entites.iter().collect()
@@ -94,6 +95,7 @@ pub fn show_hierarchy(
                         &mut selected,
                         &mut clone_events,
                         &mut changes,
+                        &mut prefab_made,
                     );
                 } else {
                     draw_entity::<With<PrefabMarker>>(
@@ -104,6 +106,7 @@ pub fn show_hierarchy(
                         &mut selected,
                         &mut clone_events,
                         &mut changes,
+                        &mut prefab_made,
                     );
                 }
             }
@@ -126,6 +129,7 @@ fn draw_entity<F: ReadOnlyWorldQuery>(
     selected: &mut Query<Entity, With<Selected>>,
     clone_events: &mut EventWriter<CloneEvent>,
     changes: &mut EventWriter<NewChange>,
+    prefab_made: &mut EventWriter<PrefabMade>,
 ) {
     let Ok((_, name, children, parent)) = query.get(entity) else {
         return;
@@ -156,6 +160,7 @@ fn draw_entity<F: ReadOnlyWorldQuery>(
                     clone_events,
                     selected,
                     parent,
+                    prefab_made,
                 );
             });
 
@@ -178,7 +183,7 @@ fn draw_entity<F: ReadOnlyWorldQuery>(
         })
         .body(|ui| {
             for child in children.unwrap().iter() {
-                draw_entity(commands, ui, query, *child, selected, clone_events, changes);
+                draw_entity(commands, ui, query, *child, selected, clone_events, changes, prefab_made);
             }
         });
     } else {
@@ -194,6 +199,7 @@ fn draw_entity<F: ReadOnlyWorldQuery>(
                 clone_events,
                 selected,
                 parent,
+                prefab_made,
             );
         });
 
@@ -224,6 +230,7 @@ fn hierarchy_entity_context(
     clone_events: &mut EventWriter<'_, CloneEvent>,
     selected: &mut Query<'_, '_, Entity, With<Selected>>,
     parent: Option<&Parent>,
+    prefab_made: &mut EventWriter<PrefabMade>,
 ) {
     if ui.button("Add child").clicked() {
         let new_id = commands.spawn_empty().insert(PrefabMarker).id();
@@ -251,6 +258,10 @@ fn hierarchy_entity_context(
     }
     if parent.is_some() && ui.button("Detach").clicked() {
         commands.entity(entity).remove_parent();
+    }
+    if ui.button("Make Prefab").clicked() {
+        prefab_made.send(PrefabMade { entity });
+        ui.close_menu();
     }
 }
 
