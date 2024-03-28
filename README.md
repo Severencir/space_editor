@@ -47,11 +47,10 @@ The following explains how to integrate `space_editor` as a game plugin to use t
 
 Add this line to your Cargo.toml file
 ```toml
-space_editor = "0.4.0"
+space_editor = {git = "https://github.com/rewin123/space_editor.git"}
 
 # For now it is recomendended to use the following patches of the libraries we are using
 [patch.crates-io]
-egui-gizmo = { git = "https://github.com/naomijub/egui-gizmo.git" }
 bevy-inspector-egui ={ git = "https://github.com/naomijub/bevy-inspector-egui.git" }
 ```
 
@@ -149,11 +148,19 @@ Game mode can be changed between 3D and 2D in `settings > GameMode`. This change
 
 |bevy|space_editor crates|
 |---|---|
+|0.13| 0.5|
 |0.12| 0.3 - 0.4|
 
 ### Contributing
 Any request for adding functionality to the editor is welcome. Open an issue on the [issue tracker](https://github.com/rewin123/space_editor/issues).
-Any pull request is welcome too:) 
+Any pull request is welcome too:)
+
+- PR to main: Bug Fixes and Tests
+- New features and others: next version branch **(ex: last released is 0.5, so create PRs for branch v0.6)**
+
+### Branch Policy
+* **v0.x Branches:** These branches house versions of the editor that are actively being developed. Currently, the primary focus is on branch v0.6.
+* **Main Branch:** The main branch exclusively hosts stable versions of the space_editor without any known bugs. Updates to this branch are limited to bug fixes, documentation improvements, or merging in the v0.x branch once all identified issues have been resolved, and the version is considered complete.
 
 ### License
 MIT - https://choosealicense.com/licenses/mit/
@@ -161,5 +168,5 @@ MIT - https://choosealicense.com/licenses/mit/
 
 ### Project naming
 
-I'm using the editor to create my own Sci-Fi space game, so the name of the project starts with space_ :)
+Space_editor started as part of my prototype space game, which I feel could be useful in development, so I thought I'd share my inbuilt editor. Since the game is about space and the name of the editor starts with space_*:)
 

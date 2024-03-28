@@ -25,6 +25,8 @@ impl Plugin for EditorDefaultCameraPlugin {
                 .before(update_pan_orbit)
                 .in_set(EditorSet::Editor),
         );
+        app.add_systems(OnEnter(EditorState::GamePrepare), reset_play_camera_state);
+        app.add_systems(OnEnter(EditorState::Editor), reset_editor_camera_state);
     }
 }
 
@@ -32,9 +34,20 @@ impl Plugin for EditorDefaultCameraPlugin {
 #[derive(Resource, Default)]
 pub struct EditorCameraEnabled(pub bool);
 
+impl From<bool> for EditorCameraEnabled {
+    fn from(value: bool) -> Self {
+        Self(value)
+    }
+}
+
 /// This system executes before all UI systems and is used to enable pan orbit camera on frame start
 pub fn reset_editor_camera_state(mut state: ResMut<EditorCameraEnabled>) {
-    *state = EditorCameraEnabled(true);
+    *state = true.into();
+}
+
+/// This system executes before all UI systems and is used to enable pan orbit camera on frame start
+pub fn reset_play_camera_state(mut state: ResMut<EditorCameraEnabled>) {
+    *state = false.into();
 }
 
 /// This system executes after all UI systems and is used to set pan orbit camera state.
@@ -48,26 +61,63 @@ pub fn update_pan_orbit(
     }
 }
 
-type ChangeCameraQueryFilter = (Without<EditorCameraMarker>, With<CameraPlay>);
+type PlayModeCameraFilter = (Without<EditorCameraMarker>, With<PlaymodeCamera>);
+type EditorModeCameraFilter = (With<EditorCameraMarker>, Without<PlaymodeCamera>);
 
-/// System to change camera from editor camera to game camera (if exist)
+/// System to change camera from editor camera to game play camera (if exist)
 pub fn change_camera_in_play(
-    mut cameras: Query<&mut Camera, (With<EditorCameraMarker>, Without<CameraPlay>)>,
-    mut play_cameras: Query<(&mut Camera, &CameraPlay), ChangeCameraQueryFilter>,
+    mut editor_cameras: Query<&mut Camera, EditorModeCameraFilter>,
+    mut play_cameras: Query<&mut Camera, PlayModeCameraFilter>,
+    primary_window: Query<&mut Window, With<PrimaryWindow>>,
+    #[cfg(feature = "editor")] mut toast: EventWriter<ToastMessage>,
 ) {
     if !play_cameras.is_empty() {
-        let (mut some_camera, _) = play_cameras.iter_mut().next().unwrap();
-        cameras.single_mut().is_active = false;
-        some_camera.is_active = true;
+        editor_cameras.iter_mut().for_each(|mut cam| {
+            cam.is_active = false;
+        });
+        play_cameras.iter_mut().for_each(|mut cam| {
+            cam.is_active = true;
+        });
+
+        let Ok(window) = primary_window.get_single() else {
+            error!("Failed to get Primary Window");
+            #[cfg(feature = "editor")]
+            toast.send(ToastMessage::new(
+                "Failed to get Primary Window",
+                space_shared::toast::ToastKind::Error,
+            ));
+            return;
+        };
+        let Ok(mut cam) = play_cameras.get_single_mut() else {
+            error!("No play camera found");
+            #[cfg(feature = "editor")]
+            toast.send(ToastMessage::new(
+                "No play camera found",
+                space_shared::toast::ToastKind::Error,
+            ));
+            return;
+        };
+        cam.viewport = Some(bevy::render::camera::Viewport {
+            physical_position: UVec2::new(0, 0),
+            physical_size: UVec2::new(window.width() as u32, window.height() as u32),
+            depth: 0.0..1.0,
+        });
+    } else {
+        error!("No play camera found");
+        #[cfg(feature = "editor")]
+        toast.send(ToastMessage::new(
+            "No play camera found",
+            space_shared::toast::ToastKind::Error,
+        ));
     }
 }
 
 /// System to change camera from game camera to editor camera (if exist)
 pub fn change_camera_in_editor(
-    mut cameras: Query<&mut Camera, With<EditorCameraMarker>>,
-    mut play_cameras: Query<&mut Camera, Without<EditorCameraMarker>>,
+    mut editor_cameras: Query<&mut Camera, EditorModeCameraFilter>,
+    mut play_cameras: Query<&mut Camera, PlayModeCameraFilter>,
 ) {
-    for mut ecam in cameras.iter_mut() {
+    for mut ecam in editor_cameras.iter_mut() {
         ecam.is_active = true;
     }
 

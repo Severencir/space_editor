@@ -80,7 +80,7 @@ use bevy::{
     utils::HashMap,
     window::PrimaryWindow,
 };
-use bevy_egui_next::{egui, EguiContext};
+use bevy_egui::{egui, EguiContext};
 
 use game_view::{has_window_changed, GameViewPlugin};
 use prelude::{
@@ -93,7 +93,8 @@ use space_editor_core::toast::ToastUiPlugin;
 use space_prefab::prelude::*;
 use space_shared::{
     ext::bevy_inspector_egui::{quick::WorldInspectorPlugin, DefaultInspectorConfigPlugin},
-    EditorCameraMarker, EditorSet, EditorState, PrefabMarker, PrefabMemoryCache, SelectParent,
+    toast::ToastMessage,
+    EditorCameraMarker, EditorSet, EditorState, PrefabMarker, PrefabMemoryCache,
 };
 use space_undo::{SyncUndoMarkersPlugin, UndoPlugin, UndoSet};
 use ui_registration::BundleReg;
@@ -126,7 +127,7 @@ pub mod prelude {
 
 /// External dependencies for editor crate
 pub mod ext {
-    pub use bevy_egui_next;
+    pub use bevy_egui;
     pub use bevy_mod_picking;
     pub use bevy_panorbit_camera;
     pub use space_shared::ext::*;
@@ -157,7 +158,7 @@ impl PluginGroup for EditorPluginGroup {
             .add(EditorSetsPlugin)
             .add(EditorDefaultBundlesPlugin)
             .add(EditorDefaultCameraPlugin)
-            .add(bevy_egui_next::EguiPlugin)
+            .add(bevy_egui::EguiPlugin)
             .add(EventListenerPlugin::<selection::SelectEvent>::default())
             .add(DefaultInspectorConfigPlugin);
         res = EditorUiPlugin::default().add_plugins_to_group(res);
@@ -229,12 +230,18 @@ impl Plugin for EditorGizmoConfigPlugin {
     }
 }
 
-fn editor_gizmos(mut gizmos_config: ResMut<GizmoConfig>) {
-    gizmos_config.render_layers = RenderLayers::layer(LAST_RENDER_LAYER)
+fn editor_gizmos(mut gizmos_config: ResMut<GizmoConfigStore>) {
+    gizmos_config
+        .config_mut::<DefaultGizmoConfigGroup>()
+        .0
+        .render_layers = RenderLayers::layer(LAST_RENDER_LAYER)
 }
 
-fn game_gizmos(mut gizmos_config: ResMut<GizmoConfig>) {
-    gizmos_config.render_layers = RenderLayers::layer(0)
+fn game_gizmos(mut gizmos_config: ResMut<GizmoConfigStore>) {
+    gizmos_config
+        .config_mut::<DefaultGizmoConfigGroup>()
+        .0
+        .render_layers = RenderLayers::layer(0)
 }
 
 type AutoAddQueryFilter = (
@@ -244,7 +251,14 @@ type AutoAddQueryFilter = (
     Changed<Handle<Mesh>>,
 );
 
-fn save_prefab_before_play(mut editor_events: EventWriter<space_shared::EditorEvent>) {
+fn save_prefab_before_play(
+    mut editor_events: EventWriter<space_shared::EditorEvent>,
+    mut toast: EventWriter<ToastMessage>,
+) {
+    toast.send(ToastMessage::new(
+        "Preparing prefab to save for playmode",
+        space_shared::toast::ToastKind::Info,
+    ));
     editor_events.send(space_shared::EditorEvent::Save(
         space_shared::EditorPrefabPath::MemoryCache,
     ));
@@ -315,7 +329,12 @@ pub fn simple_editor_setup(mut commands: Commands) {
             count: 9,
             color: Color::GRAY.with_a(DEFAULT_GRID_ALPHA),
         },
-        GridAxis::new_rgb(),
+        // Darker grid to make it easier to see entity gizmos when Transform (0, 0, 0)
+        GridAxis {
+            x: Some(Color::rgb(0.9, 0.1, 0.1)),
+            y: Some(Color::rgb(0.1, 0.9, 0.1)),
+            z: Some(Color::rgb(0.1, 0.1, 0.9)),
+        },
         TrackedGrid::default(),
         TransformBundle::default(),
         VisibilityBundle::default(),
@@ -328,7 +347,7 @@ pub fn simple_editor_setup(mut commands: Commands) {
         Camera3dBundle {
             transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
             camera: Camera {
-                order: 0,
+                order: 100,
                 ..default()
             },
             ..default()
@@ -358,7 +377,8 @@ pub fn game_mode_changed(
                 Camera3dBundle {
                     transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
                     camera: Camera {
-                        order: 0,
+                        // We had too many editor cameras at order 0
+                        order: 100,
                         ..default()
                     },
                     ..default()
@@ -375,7 +395,7 @@ pub fn game_mode_changed(
             commands.spawn((
                 Camera2dBundle {
                     camera: Camera {
-                        order: 0,
+                        order: 100,
                         ..default()
                     },
                     ..default()
@@ -391,7 +411,7 @@ pub fn game_mode_changed(
 }
 
 pub mod colors {
-    use bevy_egui_next::egui::{Color32, Stroke};
+    use bevy_egui::egui::{Color32, Stroke};
 
     pub fn stroke_default_color() -> Stroke {
         Stroke::new(1., STROKE_COLOR)
@@ -399,6 +419,7 @@ pub mod colors {
     pub const STROKE_COLOR: Color32 = Color32::from_rgb(70, 70, 70);
     pub const SPECIAL_BG_COLOR: Color32 = Color32::from_rgb(20, 20, 20);
     pub const DEFAULT_BG_COLOR: Color32 = Color32::from_rgb(27, 27, 27);
+    pub const PLAY_COLOR: Color32 = Color32::from_rgb(0, 194, 149);
     pub const ERROR_COLOR: Color32 = Color32::from_rgb(255, 59, 33);
     pub const HYPERLINK_COLOR: Color32 = Color32::from_rgb(99, 235, 231);
     pub const WARM_COLOR: Color32 = Color32::from_rgb(225, 206, 67);
@@ -409,7 +430,7 @@ pub mod colors {
 pub mod sizing {
     use bevy::prelude::*;
     use bevy_inspector_egui::prelude::*;
-    use egui_dock::egui::RichText;
+    use egui_dock::egui::{Color32, RichText};
 
     #[derive(Resource, Clone, PartialEq, Reflect, InspectorOptions)]
     #[reflect(Resource, Default, InspectorOptions)]
@@ -423,7 +444,7 @@ pub mod sizing {
     impl Default for Sizing {
         fn default() -> Self {
             Self {
-                icon: IconSize::Medium,
+                icon: IconSize::Regular,
                 gizmos: IconSize::Gizmos,
                 text: 14.,
             }
@@ -461,6 +482,10 @@ pub mod sizing {
 
     pub fn to_richtext(text: &str, size: &IconSize) -> RichText {
         RichText::new(text).size(size.to_size())
+    }
+
+    pub fn to_colored_richtext(text: &str, size: &IconSize, color: Color32) -> RichText {
+        RichText::new(text).size(size.to_size()).color(color)
     }
 
     pub fn to_label(text: &str, size: f32) -> RichText {

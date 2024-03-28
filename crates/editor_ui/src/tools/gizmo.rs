@@ -1,6 +1,6 @@
 use bevy::{prelude::*, render::camera::CameraProjection};
-use bevy_egui_next::egui::{self, Key};
-use egui_gizmo::*;
+use bevy_egui::egui::{self, Key};
+use egui_gizmo::GizmoMode;
 use space_editor_core::prelude::*;
 use space_shared::*;
 
@@ -21,10 +21,10 @@ impl Plugin for GizmoToolPlugin {
         app.world.resource_mut::<GameViewTab>().active_tool = Some(0);
         app.init_resource::<MultipleCenter>();
 
-        app.editor_hotkey(GizmoHotkey::Translate, vec![KeyCode::G]);
-        app.editor_hotkey(GizmoHotkey::Rotate, vec![KeyCode::R]);
-        app.editor_hotkey(GizmoHotkey::Scale, vec![KeyCode::S]);
-        app.editor_hotkey(GizmoHotkey::Delete, vec![KeyCode::X]);
+        app.editor_hotkey(GizmoHotkey::Translate, vec![KeyCode::KeyG]);
+        app.editor_hotkey(GizmoHotkey::Rotate, vec![KeyCode::KeyR]);
+        app.editor_hotkey(GizmoHotkey::Scale, vec![KeyCode::KeyS]);
+        app.editor_hotkey(GizmoHotkey::Delete, vec![KeyCode::KeyX]);
         app.editor_hotkey(GizmoHotkey::Multiple, vec![KeyCode::ShiftLeft]);
         app.editor_hotkey(GizmoHotkey::Clone, vec![KeyCode::AltLeft]);
 
@@ -69,6 +69,19 @@ impl Default for GizmoTool {
     }
 }
 
+const MODE_TO_NAME: [(GizmoMode, &str); 3] = [
+    (GizmoMode::Translate, "Translate"),
+    (GizmoMode::Rotate, "Rotate"),
+    (GizmoMode::Scale, "Scale"),
+];
+
+//hot keys. Blender keys prefer
+const MODE_TO_KEY: [(GizmoMode, GizmoHotkey); 3] = [
+    (GizmoMode::Translate, GizmoHotkey::Translate),
+    (GizmoMode::Rotate, GizmoHotkey::Rotate),
+    (GizmoMode::Scale, GizmoHotkey::Scale),
+];
+
 impl EditorTool for GizmoTool {
     fn name(&self) -> &str {
         "Gizmo"
@@ -82,11 +95,6 @@ impl EditorTool for GizmoTool {
         // If SHIFT+ALT pressed, then all selected entities will be cloned at interact
         // All hotkeys can be changes in editor ui
 
-        let mode2name = vec![
-            (GizmoMode::Translate, "Translate"),
-            (GizmoMode::Rotate, "Rotate"),
-            (GizmoMode::Scale, "Scale"),
-        ];
         let sizing = world.resource::<Sizing>();
 
         ui.spacing();
@@ -94,7 +102,7 @@ impl EditorTool for GizmoTool {
             let stl = ui.style_mut();
             stl.spacing.button_padding = egui::Vec2::new(4., 2.);
             stl.spacing.item_spacing = egui::Vec2::new(1., 0.);
-            for (mode, hint) in mode2name {
+            for (mode, hint) in MODE_TO_NAME {
                 if self.gizmo_mode == mode {
                     ui.add(mode.to_button(sizing).fill(SELECTED_ITEM_COLOR))
                         .on_disabled_hover_text(hint)
@@ -111,26 +119,22 @@ impl EditorTool for GizmoTool {
             }
         });
 
-        let input = world.resource::<Input<GizmoHotkey>>();
+        let input = world.resource::<ButtonInput<GizmoHotkey>>();
 
         let mut del = false;
         let mut clone_pressed = false;
         let mut multiple_pressed = false;
 
-        //hot keys. Blender keys prefer
-        let mode2key = vec![
-            (GizmoMode::Translate, GizmoHotkey::Translate),
-            (GizmoMode::Rotate, GizmoHotkey::Rotate),
-            (GizmoMode::Scale, GizmoHotkey::Scale),
-        ];
-
-        for (mode, key) in mode2key {
+        for (mode, key) in MODE_TO_KEY {
             if input.just_pressed(key) {
                 self.gizmo_mode = mode;
             }
         }
 
-        if ui.input(|s| s.key_pressed(Key::Delete) || input.just_pressed(GizmoHotkey::Delete)) {
+        if ui.input(|s| {
+            input.just_pressed(GizmoHotkey::Delete)
+                || (s.modifiers.shift && s.modifiers.ctrl && s.key_pressed(Key::Delete))
+        }) {
             del = true;
         }
 
@@ -401,5 +405,40 @@ fn draw_lines_system(
         for selected in &selected {
             gizmos.line(selected.translation(), center, Color::WHITE);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_gizmo_tool() {
+        let default_tool = GizmoTool::default();
+
+        assert_eq!(default_tool.gizmo_mode, GizmoMode::Translate);
+        assert_eq!(default_tool.is_move_cloned_entities, false);
+        assert_eq!(default_tool.name(), "Gizmo");
+    }
+
+    #[test]
+    fn test_gizmo_hotkey_name() {
+        let gizmo_hotkey = GizmoHotkey::Translate;
+        assert_eq!(gizmo_hotkey.name(), "Translate entity");
+
+        let gizmo_hotkey = GizmoHotkey::Rotate;
+        assert_eq!(gizmo_hotkey.name(), "Rotate entity");
+
+        let gizmo_hotkey = GizmoHotkey::Scale;
+        assert_eq!(gizmo_hotkey.name(), "Scale entity");
+
+        let gizmo_hotkey = GizmoHotkey::Delete;
+        assert_eq!(gizmo_hotkey.name(), "Delete entity");
+
+        let gizmo_hotkey = GizmoHotkey::Multiple;
+        assert_eq!(gizmo_hotkey.name(), "Change multiple entities");
+
+        let gizmo_hotkey = GizmoHotkey::Clone;
+        assert_eq!(gizmo_hotkey.name(), "Clone entity");
     }
 }

@@ -1,5 +1,7 @@
 use anyhow::anyhow;
-use bevy::{prelude::*, render::view::RenderLayers, utils::HashMap};
+use bevy::{
+    math::primitives as math_shapes, prelude::*, render::view::RenderLayers, utils::HashMap,
+};
 use bevy_asset_loader::{
     asset_collection::AssetCollection,
     dynamic_asset::{DynamicAsset, DynamicAssetCollection},
@@ -17,10 +19,8 @@ use space_prefab::editor_registry::EditorRegistryExt;
 use space_shared::*;
 
 use crate::LAST_RENDER_LAYER;
-use space_editor_core::{
-    selected::Selected,
-    toast::{ToastKind, ToastMessage},
-};
+use space_editor_core::selected::Selected;
+use space_shared::toast::*;
 
 #[derive(Default)]
 pub struct MeshlessVisualizerPlugin;
@@ -153,14 +153,8 @@ fn register_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
                 .inspect_err(|err| error!("failed to load image `Camera`: {err}"))
                 .unwrap(),
         ),
-        square: asset_server.add(shape::Quad::new(Vec2::splat(2.)).into()),
-        sphere: asset_server.add(
-            Mesh::try_from(shape::Icosphere {
-                radius: 0.75,
-                ..default()
-            })
-            .unwrap(),
-        ),
+        square: asset_server.add(math_shapes::Rectangle::new(2., 2.).into()),
+        sphere: asset_server.add(Mesh::from(math_shapes::Sphere { radius: 0.75 })),
     };
     commands.insert_resource(assets);
 }
@@ -212,9 +206,8 @@ impl DynamicAsset for EditorIconAssetType {
                     .get_resource_mut::<Assets<Mesh>>()
                     .ok_or_else(|| anyhow!("Failed to get Mesh Assets"))?;
                 let handle = meshes
-                    .add(Mesh::from(shape::Quad {
-                        size: *size,
-                        ..default()
+                    .add(Mesh::from(math_shapes::Rectangle {
+                        half_size: *size * 0.5,
                     }))
                     .untyped();
                 Ok(DynamicAssetType::Single(handle))
@@ -224,21 +217,7 @@ impl DynamicAsset for EditorIconAssetType {
                     .get_resource_mut::<Assets<Mesh>>()
                     .ok_or_else(|| anyhow!("Failed to get Mesh Assets"))?;
                 let handle = meshes
-                    .add(
-                        Mesh::try_from(shape::Icosphere {
-                            radius: *radius,
-                            ..default()
-                        })
-                        // in case the provided value is bad, defaults to a value that has been tested as good enough
-                        .unwrap_or_else(|_| {
-                            shape::Icosphere {
-                                radius: 0.75,
-                                ..default()
-                            }
-                            .try_into()
-                            .unwrap()
-                        }),
-                    )
+                    .add(Mesh::from(math_shapes::Sphere { radius: *radius }))
                     .untyped();
                 Ok(DynamicAssetType::Single(handle))
             }
@@ -292,6 +271,7 @@ pub fn visualize_meshless(
                         ..default()
                     },
                     RenderLayers::layer(LAST_RENDER_LAYER),
+                    Name::from("Billboard Texture"),
                 ))
                 .with_children(|adult| {
                     adult.spawn((
@@ -301,6 +281,7 @@ pub fn visualize_meshless(
                             ..default()
                         },
                         SelectParent { parent },
+                        Name::from("Billboard Mesh"),
                     ));
                 })
                 .id();
@@ -321,6 +302,7 @@ pub fn visualize_meshless(
                         ..default()
                     },
                     RenderLayers::layer(LAST_RENDER_LAYER),
+                    Name::from("Billboard Texture"),
                 ))
                 .with_children(|adult| {
                     adult.spawn((
@@ -330,6 +312,7 @@ pub fn visualize_meshless(
                             ..default()
                         },
                         SelectParent { parent },
+                        Name::from("Billboard Mesh"),
                     ));
                 })
                 .id();
@@ -365,11 +348,12 @@ pub fn visualize_custom_meshless(
                         .spawn((
                             BillboardTextureBundle {
                                 mesh: BillboardMeshHandle(mesh.clone().unwrap_or_else(|| {
-                                    asset_server.add(shape::Quad::new(Vec2::splat(2.)).into())
+                                    asset_server.add(math_shapes::Rectangle::new(2., 2.).into())
                                 })),
                                 texture: BillboardTextureHandle(texture),
                                 ..default()
                             },
+                            Name::from("Billboard Texture"),
                             RenderLayers::layer(LAST_RENDER_LAYER),
                         ))
                         .with_children(|adult| {
@@ -380,6 +364,7 @@ pub fn visualize_custom_meshless(
                                     ..default()
                                 },
                                 SelectParent { parent: entity },
+                                Name::from("Billboard Mesh"),
                             ));
                         })
                         .id()
@@ -398,6 +383,7 @@ pub fn visualize_custom_meshless(
                         },
                         SelectParent { parent: entity },
                         RenderLayers::layer(LAST_RENDER_LAYER),
+                        Name::from("Meshless Object"),
                     ))
                     .id(),
             };
@@ -408,9 +394,15 @@ pub fn visualize_custom_meshless(
 
 pub fn clean_meshless(
     mut commands: Commands,
-    // this covers all entities that are the children of the lights
+    // this covers all entities that are the children of the lights and Cameras
     // this can be extended to cover the custom children as well
-    objects: Query<Entity, Or<(With<BillboardTextureHandle>, With<BillboardMeshHandle>)>>,
+    objects: Query<
+        Entity,
+        (
+            Or<(With<BillboardTextureHandle>, With<BillboardMeshHandle>)>,
+            With<Parent>,
+        ),
+    >,
 ) {
     for entity in objects.iter() {
         commands.entity(entity).despawn_recursive();
@@ -477,13 +469,13 @@ pub fn draw_light_gizmo(
                     // circle at the end of the light range at both angles
                     gizmos.circle(
                         transform.translation + range,
-                        transform.back().normalize(),
+                        Direction3d::new_unchecked(transform.back().normalize()),
                         outer_rad,
                         spot.color.with_a(1.0),
                     );
                     gizmos.circle(
                         transform.translation + range,
-                        transform.back().normalize(),
+                        Direction3d::new_unchecked(transform.back().normalize()),
                         inner_rad,
                         spot.color.with_a(1.0),
                     );
@@ -552,13 +544,15 @@ mod tests {
         let mut app = App::new();
         app.add_systems(Startup, |mut commands: Commands| {
             commands.spawn_empty();
-            commands.spawn(BillboardTextureBundle::default());
+            commands.spawn_empty().with_children(|cb| {
+                cb.spawn(BillboardTextureBundle::default());
+            });
         });
         app.add_systems(Update, clean_meshless);
         app.update();
 
         let mut query = app.world.query::<Entity>();
 
-        assert_eq!(query.iter(&app.world).count(), 1);
+        assert_eq!(query.iter(&app.world).count(), 2);
     }
 }

@@ -55,29 +55,40 @@ pub fn select_listener(
     mut commands: Commands,
     query: Query<Entity, With<Selected>>,
     // may need to be optimized a bit so that there is less overlap
-    query_parent: Query<&SelectParent>,
+    prefabs: Query<Entity, With<PrefabMarker>>,
+    parents: Query<&Parent>,
     mut events: EventReader<SelectEvent>,
     pan_orbit_state: ResMut<EditorCameraEnabled>,
-    keyboard: Res<Input<KeyCode>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     if !pan_orbit_state.0 {
         events.clear();
         return;
     }
-    for event in events.read() {
+
+    let mut stack = events.read().cloned().collect::<Vec<_>>();
+
+    while let Some(event) = stack.pop() {
         info!("Select Event: {:?}", event.e);
-        let entity = query_parent.get(event.e).map_or(event.e, |a| a.parent);
-        match event.event.button {
-            PointerButton::Primary => {
-                commands.entity(entity).insert(Selected);
-                if !keyboard.pressed(KeyCode::ShiftLeft) {
-                    for e in query.iter() {
-                        commands.entity(e).remove::<Selected>();
+
+        if let Ok(entity) = prefabs.get(event.e) {
+            match event.event.button {
+                PointerButton::Primary => {
+                    commands.entity(entity).insert(Selected);
+                    if !keyboard.pressed(KeyCode::ShiftLeft) {
+                        for e in query.iter() {
+                            commands.entity(e).remove::<Selected>();
+                        }
                     }
                 }
+                PointerButton::Secondary => { /*Show context menu?*/ }
+                PointerButton::Middle => {}
             }
-            PointerButton::Secondary => { /*Show context menu?*/ }
-            PointerButton::Middle => {}
+        } else if let Ok(parent) = parents.get(event.e) {
+            stack.push(SelectEvent {
+                e: parent.get(),
+                event: event.event.clone(),
+            });
         }
     }
 }
@@ -85,11 +96,11 @@ pub fn select_listener(
 pub fn delete_selected(
     mut commands: Commands,
     query: Query<Entity, With<Selected>>,
-    keyboard: Res<Input<KeyCode>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     let shift = keyboard.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let ctrl = keyboard.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
-    let delete = keyboard.just_pressed(KeyCode::Back) || keyboard.just_pressed(KeyCode::Delete);
+    let delete = keyboard.any_just_pressed([KeyCode::Backspace, KeyCode::Delete]);
 
     if ctrl && shift && delete {
         for entity in query.iter() {

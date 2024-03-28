@@ -12,6 +12,7 @@ description = "Subcrate for the space_editor crate. Contains the prefab systems 
 
 [features]
 no_event_registration = []
+editor = []
 
 [dependencies]
 bevy.workspace = true
@@ -20,6 +21,12 @@ space_undo.workspace = true
 
 bevy-scene-hook.workspace = true
 bevy-inspector-egui.workspace = true
+
+serde = "1"
+ron.workspace = true
+
+[dev-dependencies]
+rand = "*"
 
 [lints]
 workspace = true

@@ -6,12 +6,14 @@ use bevy::{
     pbr::{CascadeShadowConfig, Cascades, CascadesVisibleEntities, CubemapVisibleEntities},
     prelude::*,
     render::{
-        camera::CameraRenderGraph,
+        camera::{CameraMainTextureUsages, CameraRenderGraph, Exposure},
         primitives::{CascadesFrusta, CubemapFrusta, Frustum},
         view::{ColorGrading, VisibleEntities},
     },
 };
 use bevy_scene_hook::HookPlugin;
+#[cfg(feature = "editor")]
+use space_shared::toast::ToastMessage;
 use space_shared::{LightAreaToggle, PrefabMarker};
 
 use crate::{
@@ -38,7 +40,7 @@ pub struct BasePrefabPlugin;
 
 impl Plugin for BasePrefabPlugin {
     fn build(&self, app: &mut App) {
-        app.add_state::<EditorState>();
+        app.init_state::<EditorState>();
 
         if !app.is_plugin_added::<HookPlugin>() {
             app.add_plugins(HookPlugin);
@@ -65,6 +67,9 @@ impl Plugin for BasePrefabPlugin {
 
         app.register_type::<EntityLink>();
 
+        app.register_type::<Direction3d>();
+        app.register_type::<Direction2d>();
+
         app.editor_registry::<Transform>();
         app.editor_registry::<Name>();
         app.editor_registry::<Visibility>();
@@ -89,10 +94,10 @@ impl Plugin for BasePrefabPlugin {
         app.editor_registry::<AnimationTimerSpriteSheet>();
         app.editor_registry::<TextureAtlasPrefab>();
 
-        app.editor_registry::<MeshPrimitivePrefab>();
-        app.editor_relation::<MeshPrimitivePrefab, Transform>();
-        app.editor_relation::<MeshPrimitivePrefab, Visibility>();
-        app.editor_relation::<MeshPrimitivePrefab, MaterialPrefab>();
+        app.editor_registry::<MeshPrimitive3dPrefab>();
+        app.editor_relation::<MeshPrimitive3dPrefab, Transform>();
+        app.editor_relation::<MeshPrimitive3dPrefab, Visibility>();
+        app.editor_relation::<MeshPrimitive3dPrefab, MaterialPrefab>();
 
         app.editor_registry::<MeshPrimitive2dPrefab>();
         app.editor_relation::<MeshPrimitive2dPrefab, Transform>();
@@ -106,10 +111,14 @@ impl Plugin for BasePrefabPlugin {
         app.register_type::<CapsulePrefab>();
         app.register_type::<CirclePrefab>();
         app.register_type::<CylinderPrefab>();
-        app.register_type::<IcospherePrefab>();
         app.register_type::<PlanePrefab>();
+        app.register_type::<Plane3dPrefab>();
+        app.register_type::<PlaneMultiPointPrefab>();
         app.register_type::<RegularPolygonPrefab>();
         app.register_type::<TorusPrefab>();
+        app.register_type::<EllipsePrefab>();
+        app.register_type::<TrianglePrefab>();
+        app.register_type::<Capsule2dPrefab>();
 
         app.editor_registry::<AssetMesh>();
         app.add_systems(
@@ -134,7 +143,7 @@ impl Plugin for BasePrefabPlugin {
         app.editor_registry::<Camera2d>();
         app.editor_registry::<Projection>();
         app.editor_registry::<OrthographicProjection>();
-        app.editor_registry::<CameraPlay>();
+        app.editor_registry::<PlaymodeCamera>();
 
         app.register_type::<Camera3dDepthTextureUsage>();
         app.register_type::<ScreenSpaceTransmissionQuality>();
@@ -144,11 +153,13 @@ impl Plugin for BasePrefabPlugin {
         app.editor_relation::<Camera3d, Camera>();
         app.editor_relation::<Camera3d, Projection>();
         app.editor_relation::<Camera3d, ColorGrading>();
+        app.editor_relation::<Camera3d, Exposure>();
         app.editor_relation::<Camera, VisibleEntities>();
         app.editor_relation::<Camera, Frustum>();
         app.editor_relation::<Camera, Transform>();
         app.editor_relation::<Camera, Tonemapping>();
         app.editor_relation::<Camera, DebandDither>();
+        app.editor_relation::<Camera, CameraMainTextureUsages>();
 
         app.add_systems(Update, camera_render_graph_creation);
 
@@ -184,9 +195,16 @@ impl Plugin for BasePrefabPlugin {
         app.editor_relation::<SpotLight, Transform>();
         app.editor_relation::<SpotLight, Visibility>();
 
+        app.editor_registry::<PlaymodeLight>();
+
+        #[cfg(feature = "editor")]
+        app.add_event::<ToastMessage>();
+
         app.add_systems(OnEnter(EditorState::Game), spawn_player_start);
 
         app.add_systems(Update, spawn_scene.in_set(PrefabSet::PrefabLoad));
+        app.add_systems(PreUpdate, create_child_path);
+
         app.add_systems(
             Update,
             (
@@ -221,16 +239,25 @@ impl Plugin for BasePrefabPlugin {
 
         app.add_plugins(SavePrefabPlugin);
         app.add_plugins(LoadPlugin);
+        app.add_plugins(crate::sub_scene::SceneUnpackPlugin);
     }
 }
 
 fn camera_render_graph_creation(
     mut commands: Commands,
-    query: Query<Entity, (With<Camera>, With<PrefabMarker>, Without<CameraRenderGraph>)>,
+    query: Query<
+        Entity,
+        (
+            With<Camera>,
+            With<Camera3d>,
+            With<PrefabMarker>,
+            Without<CameraRenderGraph>,
+        ),
+    >,
 ) {
     for e in query.iter() {
         commands.entity(e).insert(CameraRenderGraph::new(
-            bevy::core_pipeline::core_3d::graph::NAME,
+            bevy::core_pipeline::core_3d::graph::Core3d,
         ));
     }
 }

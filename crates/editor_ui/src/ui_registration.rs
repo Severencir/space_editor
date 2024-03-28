@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use bevy::ecs::system::EntityCommands;
+use bevy::{
+    core_pipeline::tonemapping::DebandDither, ecs::system::EntityCommands,
+    render::camera::CameraRenderGraph,
+};
 
 use space_prefab::{component::*, ext::*};
 use space_shared::{LightAreaToggle, PrefabMarker};
@@ -86,6 +89,8 @@ pub fn register_light_editor_bundles(app: &mut App) {
             Name::new("Point light"),
             PointLight::default(),
             LightAreaToggle::default(),
+            PlaymodeLight::default(),
+            PrefabMarker,
         ),
     );
 
@@ -96,6 +101,8 @@ pub fn register_light_editor_bundles(app: &mut App) {
             Name::new("Directional light"),
             DirectionalLight::default(),
             LightAreaToggle::default(),
+            PlaymodeLight::default(),
+            PrefabMarker,
         ),
     );
 
@@ -106,6 +113,8 @@ pub fn register_light_editor_bundles(app: &mut App) {
             Name::new("Spot light"),
             SpotLight::default(),
             LightAreaToggle::default(),
+            PlaymodeLight::default(),
+            PrefabMarker,
         ),
     );
 }
@@ -116,121 +125,133 @@ pub fn register_mesh_editor_bundles(app: &mut App) {
         "Mesh",
         "3D Cube",
         (
-            MeshPrimitivePrefab::Cube(1.0),
+            PrefabMarker,
+            MeshPrimitive3dPrefab::Cube(1.0),
             Name::new("Cube".to_string()),
             Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
         ),
     );
     app.editor_bundle(
         "Mesh",
         "3D Box",
         (
-            MeshPrimitivePrefab::Box(BoxPrefab::default()),
+            PrefabMarker,
+            MeshPrimitive3dPrefab::Box(BoxPrefab::default()),
             Name::new("Box".to_string()),
             Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
         ),
     );
     app.editor_bundle(
         "Mesh",
         "3D Sphere",
         (
-            MeshPrimitivePrefab::Sphere(SpherePrefab::default()),
+            PrefabMarker,
+            MeshPrimitive3dPrefab::Sphere(SpherePrefab::default()),
             Name::new("UVSphere".to_string()),
             Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
         ),
     );
     app.editor_bundle(
         "Mesh",
-        "3D Quad",
+        "3D Rectagle",
         (
-            MeshPrimitivePrefab::Quad(QuadPrefab::default()),
-            Name::new("Quad".to_string()),
+            PrefabMarker,
+            MeshPrimitive3dPrefab::Quad(QuadPrefab::default()),
+            Name::new("Rectagle".to_string()),
             Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
         ),
     );
     app.editor_bundle(
         "Mesh",
         "3D Capsule",
         (
-            MeshPrimitivePrefab::Capsule(CapsulePrefab::default()),
+            PrefabMarker,
+            MeshPrimitive3dPrefab::Capsule(CapsulePrefab::default()),
             Name::new("Capsule"),
             Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
         ),
     );
     app.editor_bundle(
         "Mesh",
         "3D Circle",
         (
-            MeshPrimitivePrefab::Circle(CirclePrefab::default()),
+            PrefabMarker,
+            MeshPrimitive3dPrefab::Circle(CirclePrefab::default()),
             Name::new("Circle".to_string()),
             Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
         ),
     );
     app.editor_bundle(
         "Mesh",
         "3D Cylinder",
         (
-            MeshPrimitivePrefab::Cylinder(CylinderPrefab::default()),
+            PrefabMarker,
+            MeshPrimitive3dPrefab::Cylinder(CylinderPrefab::default()),
             Name::new("Cylinder".to_string()),
             Transform::default(),
-            Visibility::default(),
-        ),
-    );
-    app.editor_bundle(
-        "Mesh",
-        "3D Icosphere",
-        (
-            MeshPrimitivePrefab::Icosphere(IcospherePrefab::default()),
-            Name::new("Icosphere".to_string()),
-            Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
         ),
     );
     app.editor_bundle(
         "Mesh",
         "3D Plane",
         (
-            MeshPrimitivePrefab::Plane(PlanePrefab::default()),
+            PrefabMarker,
+            MeshPrimitive3dPrefab::Plane(Plane3dPrefab::default()),
             Name::new("Plane".to_string()),
             Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
+        ),
+    );
+    app.editor_bundle(
+        "Mesh",
+        "3D Plane Multipoint",
+        (
+            PrefabMarker,
+            MeshPrimitive3dPrefab::PlaneMultipoint(PlaneMultiPointPrefab::default()),
+            Name::new("Plane Multipoint".to_string()),
+            Transform::default(),
+            VisibilityBundle::default(),
         ),
     );
     app.editor_bundle(
         "Mesh",
         "3D Regular Polygon",
         (
-            MeshPrimitivePrefab::RegularPolygon(RegularPolygonPrefab::default()),
+            PrefabMarker,
+            MeshPrimitive3dPrefab::RegularPolygon(RegularPolygonPrefab::default()),
             Name::new("Regular Polygon".to_string()),
             Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
         ),
     );
     app.editor_bundle(
         "Mesh",
         "3D Torus",
         (
-            MeshPrimitivePrefab::Torus(TorusPrefab::default()),
+            PrefabMarker,
+            MeshPrimitive3dPrefab::Torus(TorusPrefab::default()),
             Name::new("Torus".to_string()),
             Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
         ),
     );
 
     app.editor_bundle(
         "Mesh",
-        "2D Quad",
+        "2D Rectagle",
         (
-            MeshPrimitive2dPrefab::Quad(QuadPrefab::default()),
+            PrefabMarker,
+            MeshPrimitive2dPrefab::Rectagle(QuadPrefab::default()),
             Name::new("2D Quad".to_string()),
             Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
         ),
     );
 
@@ -238,21 +259,47 @@ pub fn register_mesh_editor_bundles(app: &mut App) {
         "Mesh",
         "2D Circle",
         (
+            PrefabMarker,
             MeshPrimitive2dPrefab::Circle(CirclePrefab::default()),
             Name::new("2D Circle".to_string()),
             Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
         ),
     );
 
     app.editor_bundle(
         "Mesh",
-        "2D Plane",
+        "2D Ellipse",
         (
-            MeshPrimitive2dPrefab::Plane(PlanePrefab::default()),
-            Name::new("2D Plane".to_string()),
+            PrefabMarker,
+            MeshPrimitive2dPrefab::Ellipse(EllipsePrefab::default()),
+            Name::new("2D Ellipse".to_string()),
             Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
+        ),
+    );
+
+    app.editor_bundle(
+        "Mesh",
+        "2D Triangle",
+        (
+            PrefabMarker,
+            MeshPrimitive2dPrefab::Triangle(TrianglePrefab::default()),
+            Name::new("2D Triangle".to_string()),
+            Transform::default(),
+            VisibilityBundle::default(),
+        ),
+    );
+
+    app.editor_bundle(
+        "Mesh",
+        "2D Triangle",
+        (
+            PrefabMarker,
+            MeshPrimitive2dPrefab::Triangle(TrianglePrefab::default()),
+            Name::new("2D Triangle".to_string()),
+            Transform::default(),
+            VisibilityBundle::default(),
         ),
     );
 
@@ -260,10 +307,11 @@ pub fn register_mesh_editor_bundles(app: &mut App) {
         "Mesh",
         "2D Regular Polygon",
         (
+            PrefabMarker,
             MeshPrimitive2dPrefab::RegularPolygon(RegularPolygonPrefab::default()),
             Name::new("2D Regular Polygon".to_string()),
             Transform::default(),
-            Visibility::default(),
+            VisibilityBundle::default(),
         ),
     );
 
@@ -272,10 +320,15 @@ pub fn register_mesh_editor_bundles(app: &mut App) {
         "3D Playmode Camera",
         (
             Camera3d::default(),
+            Camera::default(),
+            DebandDither::Enabled,
+            Projection::Perspective(PerspectiveProjection::default()),
             Name::new("Camera3d".to_string()),
             Transform::default(),
-            Visibility::default(),
-            CameraPlay::default(),
+            VisibilityBundle::default(),
+            PlaymodeCamera::default(),
+            PrefabMarker,
+            CameraRenderGraph::new(bevy::core_pipeline::core_3d::graph::Core3d),
         ),
     );
 
@@ -283,11 +336,13 @@ pub fn register_mesh_editor_bundles(app: &mut App) {
         "Camera",
         "2D Playmode Camera",
         (
-            Camera2d::default(),
+            Camera2d {},
             Name::new("Camera2d".to_string()),
             Transform::default(),
-            Visibility::default(),
-            CameraPlay::default(),
+            VisibilityBundle::default(),
+            PlaymodeCamera::default(),
+            CameraRenderGraph::new(bevy::core_pipeline::core_2d::graph::Core2d),
+            PrefabMarker,
         ),
     );
 
@@ -304,6 +359,7 @@ pub fn register_mesh_editor_bundles(app: &mut App) {
                 ..default()
             },
             Name::new("Sprite".to_string()),
+            PrefabMarker,
         ),
     );
 
@@ -315,6 +371,7 @@ pub fn register_mesh_editor_bundles(app: &mut App) {
                 texture: "branding/bevy_bird_dark.png".to_string(),
             },
             Name::new("Texture Sprite".to_string()),
+            PrefabMarker,
         ),
     );
 
@@ -331,6 +388,7 @@ pub fn register_mesh_editor_bundles(app: &mut App) {
             AvailableAnimationClips::default(),
             AnimationTimerSpriteSheet::default(),
             TextureAtlasPrefab::default(),
+            PrefabMarker,
         ),
     )
 }

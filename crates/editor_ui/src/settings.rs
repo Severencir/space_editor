@@ -2,7 +2,7 @@ use bevy::{
     prelude::*,
     utils::{HashMap, HashSet},
 };
-use bevy_egui_next::*;
+use bevy_egui::*;
 use space_editor_core::{hotkeys::AllHotkeys, EditorLoadSet};
 use space_prefab::save::PrefabsPath;
 use space_shared::{ext::bevy_inspector_egui::bevy_inspector, EditorSet};
@@ -52,7 +52,7 @@ impl Plugin for SettingsWindowPlugin {
     }
 }
 
-#[derive(Default, Reflect, PartialEq, Eq, Clone)]
+#[derive(Default, Reflect, PartialEq, Eq, Clone, Debug)]
 pub enum GameMode {
     Game2D,
     #[default]
@@ -68,7 +68,7 @@ impl ToString for GameMode {
     }
 }
 
-#[derive(Default, Resource, Reflect, Clone)]
+#[derive(Default, Resource, Reflect, Clone, Debug)]
 #[reflect(Resource)]
 pub struct GameModeSettings {
     pub mode: GameMode,
@@ -197,9 +197,8 @@ impl EditorTab for SettingsWindow {
     fn ui(&mut self, ui: &mut egui::Ui, commands: &mut Commands, world: &mut World) {
         let game_mode_setting = &world.resource::<GameModeSettings>();
         if let Some(new_game_mode) = game_mode_setting.ui(ui) {
-            let game_mode_setting: &mut GameModeSettings =
-                &mut world.resource_mut::<GameModeSettings>();
-            *game_mode_setting = new_game_mode;
+            info!("Game Mode changed: {:?}", new_game_mode);
+            *world.resource_mut::<GameModeSettings>() = new_game_mode;
         }
 
         ui.heading("Undo");
@@ -237,7 +236,7 @@ impl EditorTab for SettingsWindow {
                                     if hotkey_name == *read_input_for_hotkey {
                                         let mut key_text = String::new();
 
-                                        world.resource_scope::<Input<KeyCode>, _>(
+                                        world.resource_scope::<ButtonInput<KeyCode>, _>(
                                             |_world, input| {
                                                 let all_pressed = input
                                                     .get_pressed()

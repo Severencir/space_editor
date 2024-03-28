@@ -1,7 +1,6 @@
-// Simple platformer example
-// Run command:
-// cargo run --example platformer --features bevy_xpbd_3d
-
+/// Simple platformer example
+/// Run command:
+/// cargo run --example platformer --features bevy_xpbd_3d
 use bevy::{
     ecs::{entity::MapEntities, reflect::ReflectMapEntities},
     prelude::*,
@@ -35,10 +34,10 @@ fn simple_tab_system(mut ui: NonSendMut<EditorUiRef>) {
     ui.label("Hello editor");
 }
 
-fn configure_editor(mut load_event: EventWriter<MenuLoadEvent>) {
-    load_event.send(MenuLoadEvent {
-        path: "scenes/level_test".to_string(),
-    });
+fn configure_editor(mut load_event: EventWriter<EditorEvent>) {
+    load_event.send(EditorEvent::Load(EditorPrefabPath::File(
+        "scenes/platformer.scn.ron".to_string(),
+    )));
 }
 
 #[derive(Component, Reflect, Clone)]
@@ -78,13 +77,13 @@ impl Default for FollowCamera {
 }
 
 impl MapEntities for FollowCamera {
-    fn map_entities(&mut self, entity_mapper: &mut bevy::ecs::entity::EntityMapper) {
-        self.target.entity = entity_mapper.get_or_reserve(self.target.entity);
+    fn map_entities<M: EntityMapper>(&mut self, entity_mapper: &mut M) {
+        self.target.entity = entity_mapper.map_entity(self.target.entity);
     }
 }
 
 fn move_player(
-    keyboard_input: Res<Input<KeyCode>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
     mut query: Query<(
         Entity,
         &mut LinearVelocity,
@@ -103,34 +102,37 @@ fn move_player(
             }
             info!("time of impact: {:?} {:?}", hit.entity, hit.time_of_impact);
             let frw = transform.forward();
-            let up = transform.up();
+            // let up = transform.up();
+            let right = transform.right();
 
             let mut target_vel = Vector::new(0.0, 0.0, 0.0);
-            if keyboard_input.pressed(KeyCode::W) {
-                target_vel += frw;
+            if keyboard_input.pressed(KeyCode::KeyW) {
+                target_vel += Vec3::from(frw);
             }
-            if keyboard_input.pressed(KeyCode::S) {
-                target_vel -= frw;
+            if keyboard_input.pressed(KeyCode::KeyS) {
+                target_vel -= Vec3::from(frw);
             }
             //rotate
-            if keyboard_input.pressed(KeyCode::A) {
+            if keyboard_input.pressed(KeyCode::KeyA) {
                 rot.y = 2.0;
             }
-            if keyboard_input.pressed(KeyCode::D) {
+            if keyboard_input.pressed(KeyCode::KeyD) {
                 rot.y = -2.0;
             }
-            if !keyboard_input.pressed(KeyCode::A) && !keyboard_input.pressed(KeyCode::D) {
+            if !keyboard_input.pressed(KeyCode::KeyA) && !keyboard_input.pressed(KeyCode::KeyD) {
                 rot.y -= 10.0 * rot.y * time.delta_seconds();
             }
 
             target_vel *= controller.speed;
+
+            info!("target_vel: {:?}", target_vel);
 
             //smooth change vel
             let mut cur_vel = vel.0;
             cur_vel = vel.0 + (target_vel - cur_vel) * 10.0 * time.delta_seconds();
 
             if keyboard_input.just_pressed(KeyCode::Space) && !controller.jumped {
-                cur_vel += up * controller.jump_speed / 6.0;
+                cur_vel += right * controller.jump_speed / 12.0;
                 controller.jumped = true;
             }
             if !keyboard_input.just_pressed(KeyCode::Space) {
@@ -138,6 +140,8 @@ fn move_player(
             }
 
             vel.0 = cur_vel;
+        } else {
+            info!("no hits");
         }
     }
 }

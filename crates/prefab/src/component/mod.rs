@@ -45,9 +45,19 @@ impl Default for GltfPrefab {
     }
 }
 
+/// Marker for loaded scene roots (for example gltf root)
+#[derive(Component)]
+pub struct SceneAutoRoot;
+
 /// Marker for entities spawned from gltf scene
+#[cfg(not(tarpaulin_include))]
 #[derive(Component, Reflect, Default)]
 pub struct SceneAutoChild;
+
+/// Saved sub world for restore states of auto scene entities
+#[derive(Component)]
+#[allow(dead_code)]
+pub struct AutoScenePersistence(String);
 
 /// Not used right now. Planned to be easy method for creating prefab structs from usual structs with assets
 #[derive(Component, Reflect, Clone, Default)]
@@ -63,11 +73,13 @@ impl<T: Reflect + FromReflect + Default + Clone> AutoStruct<T> {
 
         if let ReflectRef::Struct(s) = data.reflect_ref() {
             for idx in 0..s.field_len() {
-                let field_name = s.name_at(idx).unwrap();
-                let field = s.field_at(idx).unwrap();
+                let field_name = s.name_at(idx).unwrap_or("unknown");
+                let Some(field) = s.field_at(idx) else {
+                    continue;
+                };
                 if let Some(handle) = field.downcast_ref::<Handle<Image>>() {
                     if let Some(path) = handle.path() {
-                        let path = path.path().to_str().unwrap().to_string();
+                        let path = path.path().to_str().unwrap_or("./assets").to_string();
                         paths.insert(field_name.to_string(), path);
                     }
                 }
@@ -117,6 +129,7 @@ impl Default for EntityLink {
 }
 
 /// Component to define path to mesh asset that will be loaded after prefab spawn
+#[cfg(not(tarpaulin_include))]
 #[derive(Component, Reflect, Clone, Default)]
 #[reflect(Component, Default)]
 pub struct AssetMesh {
@@ -124,8 +137,51 @@ pub struct AssetMesh {
 }
 
 /// Component to define path to material asset that will be loaded after prefab spawn
+#[cfg(not(tarpaulin_include))]
 #[derive(Component, Reflect, Clone, Default)]
 #[reflect(Component, Default)]
 pub struct AssetMaterial {
     pub path: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_entity_link() {
+        let entity_link = EntityLink::default();
+        assert_eq!(entity_link.entity, Entity::PLACEHOLDER);
+    }
+
+    #[test]
+    fn gltf_prefab_default() {
+        let prefab = GltfPrefab::default();
+        assert_eq!(prefab.path, String::new());
+        assert_eq!(prefab.scene, "Scene0".to_string());
+    }
+
+    // Not really useful test
+    #[test]
+    fn get_auto_struct_data() {
+        #[derive(Debug, Default, Clone, Reflect, Component, PartialEq, Eq)]
+        #[reflect(Default, Component)]
+        pub struct TestAuto {
+            pub value: bool,
+        }
+
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .register_type::<TestAuto>();
+
+        app.update();
+
+        let server = app.world.resource::<AssetServer>();
+        let prefab = AutoStruct::<TestAuto>::new(&TestAuto { value: false }, server);
+
+        app.update();
+
+        let server = app.world.resource::<AssetServer>();
+        assert_eq!(prefab.get_data(server), TestAuto { value: false });
+    }
 }

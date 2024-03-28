@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy_xpbd_3d::prelude::*;
+use collider::ColliderPrefab;
 use space_editor_ui::{
     prelude::{EditorRegistryExt, EditorState, PrefabSet},
     settings::RegisterSettingsBlockExt,
@@ -79,13 +80,9 @@ impl Plugin for BevyXpbdPlugin {
             app.register_settings_block("Bevy XPBD 3D", |ui, _, world| {
                 ui.checkbox(
                     &mut world
-                        .resource_mut::<bevy_xpbd_3d::prelude::PhysicsDebugConfig>()
-                        .enabled,
-                    "Show bevy xpbd debug render",
-                );
-                ui.checkbox(
-                    &mut world
-                        .resource_mut::<bevy_xpbd_3d::prelude::PhysicsDebugConfig>()
+                        .resource_mut::<GizmoConfigStore>()
+                        .config_mut::<PhysicsGizmos>()
+                        .1
                         .hide_meshes,
                     "Hide debug meshes",
                 );
@@ -168,14 +165,14 @@ fn force_rigidbody_type_change(
     mut commands: Commands,
     query: Query<(Entity, &RigidBodyPrefab, Option<&collider::ColliderPrefab>)>,
 ) {
-    for (e, tp, _col) in query.iter() {
+    for (e, tp, col) in query.iter() {
         commands
             .entity(e)
             .remove::<RigidBody>()
             .insert(tp.to_rigidbody());
-        // if let Some(col) = col {
-        //     commands.entity(e).insert(col.to_collider());
-        // }
+        if col.is_none() {
+            commands.entity(e).insert(ColliderPrefab::default());
+        }
     }
 }
 

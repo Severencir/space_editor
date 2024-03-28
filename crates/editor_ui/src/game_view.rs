@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use bevy_egui_next::egui::{self};
+use bevy_egui::egui::{self};
 use egui_gizmo::GizmoMode;
 use space_undo::UndoRedo;
 
@@ -39,12 +39,7 @@ impl Default for GameViewTab {
 }
 
 impl EditorTab for GameViewTab {
-    fn ui(
-        &mut self,
-        ui: &mut bevy_egui_next::egui::Ui,
-        commands: &mut Commands,
-        world: &mut World,
-    ) {
+    fn ui(&mut self, ui: &mut bevy_egui::egui::Ui, commands: &mut Commands, world: &mut World) {
         if ui.input_mut(|i| i.key_released(egui::Key::Z) && i.modifiers.ctrl && !i.modifiers.shift)
         {
             world.send_event(UndoRedo::Undo);
@@ -98,7 +93,7 @@ impl EditorTab for GameViewTab {
         });
     }
 
-    fn title(&self) -> bevy_egui_next::egui::WidgetText {
+    fn title(&self) -> bevy_egui::egui::WidgetText {
         "Game view".into()
     }
 }
@@ -108,7 +103,9 @@ pub fn reset_camera_viewport(
     mut cameras: Query<&mut Camera, With<EditorCameraMarker>>,
     mut game_view_tab: ResMut<GameViewTab>,
 ) {
-    let mut cam = cameras.single_mut();
+    let Ok(mut cam) = cameras.get_single_mut() else {
+        return;
+    };
 
     let Ok(window) = primary_window.get_single() else {
         return;
@@ -134,7 +131,7 @@ pub fn set_camera_viewport(
     mut local: Local<LastGameTabRect>,
     ui_state: Res<GameViewTab>,
     primary_window: Query<&mut Window, With<PrimaryWindow>>,
-    egui_settings: Res<bevy_egui_next::EguiSettings>,
+    egui_settings: Res<bevy_egui::EguiSettings>,
     mut cameras: Query<&mut Camera, With<EditorCameraMarker>>,
 ) {
     let Ok(mut cam) = cameras.get_single_mut() else {
@@ -157,12 +154,28 @@ pub fn set_camera_viewport(
 
     let scale_factor = window.scale_factor() * egui_settings.scale_factor;
 
-    let viewport_pos = viewport_rect.left_top().to_vec2() * scale_factor as f32;
-    let viewport_size = viewport_rect.size() * scale_factor as f32;
+    let viewport_pos = viewport_rect.left_top().to_vec2() * scale_factor;
+    let viewport_size = viewport_rect.size() * scale_factor;
 
     cam.viewport = Some(bevy::render::camera::Viewport {
         physical_position: UVec2::new(viewport_pos.x as u32, viewport_pos.y as u32),
         physical_size: UVec2::new(viewport_size.x as u32, viewport_size.y as u32),
         depth: 0.0..1.0,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_game_view_tab() {
+        let default_tab = GameViewTab::default();
+
+        assert_eq!(default_tab.viewport_rect, None);
+        assert_eq!(default_tab.gizmo_mode, GizmoMode::Translate);
+        assert_eq!(default_tab.smoothed_dt, 0.0);
+        assert_eq!(default_tab.tools.len(), 0);
+        assert_eq!(default_tab.active_tool, None);
+    }
 }

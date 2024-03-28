@@ -1,15 +1,20 @@
 #![allow(clippy::too_many_arguments)]
 use std::sync::Arc;
 
-use bevy::{ecs::query::ReadOnlyWorldQuery, prelude::*, utils::HashMap};
-use bevy_egui_next::{egui::collapsing_header::CollapsingState, *};
+use bevy::{ecs::query::QueryFilter, prelude::*, utils::HashMap};
+use bevy_egui::{
+    egui::{collapsing_header::CollapsingState, TextEdit},
+    *,
+};
 use space_editor_core::prelude::*;
-use space_prefab::{editor_registry::EditorRegistry, save::PrefabMade};
+use space_prefab::{component::SceneAutoChild, editor_registry::EditorRegistry, save::PrefabMade};
 use space_undo::{AddedEntity, NewChange, RemovedEntity, UndoSet};
 
 use space_shared::*;
 
 use super::{editor_tab::EditorTabName, EditorUiAppExt, EditorUiRef};
+
+pub const WARN_COLOR: egui::Color32 = egui::Color32::from_rgb(225, 206, 67);
 
 /// Event to clone entity with clone all registered components
 #[derive(Event)]
@@ -67,6 +72,7 @@ pub fn show_hierarchy(
     mut changes: EventWriter<NewChange>,
     mut state: ResMut<HierarchyTabState>,
     mut prefab_made: EventWriter<PrefabMade>,
+    auto_children: Query<(), With<SceneAutoChild>>,
 ) {
     let mut all: Vec<_> = if state.show_editor_entities {
         all_entities.iter().collect()
@@ -75,7 +81,21 @@ pub fn show_hierarchy(
     };
     all.sort_by_key(|a| a.0);
     let ui = &mut ui.0;
-    ui.text_edit_singleline(&mut state.entity_filter);
+    ui.horizontal(|ui| {
+        let button_size = ui
+            .style()
+            .text_styles
+            .get(&egui::TextStyle::Button)
+            .map(|f| f.size)
+            .unwrap_or(14.);
+        let button_padding = ui.style().spacing.button_padding.x * 2.;
+        let space = ui.style().spacing.item_spacing.x;
+        let width = 2.0f32.mul_add(-space, ui.available_width() - button_size - button_padding);
+        ui.add(TextEdit::singleline(&mut state.entity_filter).desired_width(width));
+        if ui.button("🗑").on_hover_text("Clear filter").clicked() {
+            state.entity_filter.clear();
+        }
+    });
     ui.spacing();
     let lower_filter = state.entity_filter.to_lowercase();
 
@@ -96,6 +116,7 @@ pub fn show_hierarchy(
                         &mut clone_events,
                         &mut changes,
                         &mut prefab_made,
+                        &auto_children,
                     );
                 } else {
                     draw_entity::<With<PrefabMarker>>(
@@ -107,6 +128,7 @@ pub fn show_hierarchy(
                         &mut clone_events,
                         &mut changes,
                         &mut prefab_made,
+                        &auto_children,
                     );
                 }
             }
@@ -121,7 +143,7 @@ type DrawIter<'a> = (
     Option<&'a Parent>,
 );
 
-fn draw_entity<F: ReadOnlyWorldQuery>(
+fn draw_entity<F: QueryFilter>(
     commands: &mut Commands,
     ui: &mut egui::Ui,
     query: &Query<DrawIter, F>,
@@ -130,6 +152,7 @@ fn draw_entity<F: ReadOnlyWorldQuery>(
     clone_events: &mut EventWriter<CloneEvent>,
     changes: &mut EventWriter<NewChange>,
     prefab_made: &mut EventWriter<PrefabMade>,
+    auto_children: &Query<(), With<SceneAutoChild>>,
 ) {
     let Ok((_, name, children, parent)) = query.get(entity) else {
         return;
@@ -149,9 +172,87 @@ fn draw_entity<F: ReadOnlyWorldQuery>(
             true,
         )
         .show_header(ui, |ui| {
+            let mut entity_name = egui::RichText::new(entity_name.clone());
+            let is_auto_child = auto_children.get(entity).is_ok();
+            if is_auto_child {
+                entity_name = entity_name.italics();
+            }
+
             let response = ui.selectable_label(is_selected, entity_name);
             let is_clicked = response.clicked();
-            response.context_menu(|ui| {
+            if is_auto_child {
+                response.context_menu(|ui| {
+                    if ui.button("Delete").clicked() {
+                        commands.entity(entity).despawn_recursive();
+                    }
+                    ui.label(crate::egui::RichText::new("⚠ Concrete Bevy entity cannot be reparented or cloned.\nTry \"Unpack gltf as prefab\" for that.").color(WARN_COLOR));
+                });
+            } else {
+                response.context_menu(|ui| {
+                    hierarchy_entity_context(
+                        ui,
+                        commands,
+                        entity,
+                        changes,
+                        clone_events,
+                        selected,
+                        parent,
+                        prefab_made,
+                    );
+                });
+            }
+
+            if is_clicked {
+                if is_selected {
+                    commands.entity(entity).remove::<Selected>();
+                    info!("Removed selected: {:?}", entity);
+                } else {
+                    commands.entity(entity).insert(Selected);
+
+                    //check shift pressed
+                    if !ui.input(|i| i.modifiers.shift) {
+                        selected.iter_mut().for_each(|e| {
+                            commands.entity(e).remove::<Selected>();
+                        })
+                    }
+                    info!("Added selected: {:?}", entity);
+                }
+            }
+        })
+        .body(|ui| {
+            for child in children.unwrap().iter() {
+                draw_entity(
+                    commands,
+                    ui,
+                    query,
+                    *child,
+                    selected,
+                    clone_events,
+                    changes,
+                    prefab_made,
+                    auto_children,
+                );
+            }
+        });
+    } else {
+        let mut entity_name = egui::RichText::new(format!("      {}", entity_name));
+        let is_auto_child = auto_children.get(entity).is_ok();
+        if is_auto_child {
+            entity_name = entity_name.italics();
+        }
+
+        let selectable = ui.selectable_label(is_selected, entity_name);
+        let is_clicked = selectable.clicked();
+
+        if is_auto_child {
+            selectable.context_menu(|ui| {
+                if ui.button("Delete").clicked() {
+                    commands.entity(entity).despawn_recursive();
+                }
+                ui.label(crate::egui::RichText::new("⚠ Concrete Bevy entity cannot be reparented or cloned.\nTry \"Unpack gltf as prefab\" for that.").color(WARN_COLOR));
+            });
+        } else {
+            selectable.context_menu(|ui| {
                 hierarchy_entity_context(
                     ui,
                     commands,
@@ -163,45 +264,7 @@ fn draw_entity<F: ReadOnlyWorldQuery>(
                     prefab_made,
                 );
             });
-
-            if is_clicked {
-                if is_selected {
-                    commands.entity(entity).remove::<Selected>();
-                    info!("Removed selected: {:?}", entity);
-                } else {
-                    commands.entity(entity).insert(Selected);
-
-                    //check shift pressed
-                    if !ui.input(|i| i.modifiers.shift) {
-                        selected.for_each(|e| {
-                            commands.entity(e).remove::<Selected>();
-                        })
-                    }
-                    info!("Added selected: {:?}", entity);
-                }
-            }
-        })
-        .body(|ui| {
-            for child in children.unwrap().iter() {
-                draw_entity(commands, ui, query, *child, selected, clone_events, changes, prefab_made);
-            }
-        });
-    } else {
-        let selectable = ui.selectable_label(is_selected, format!("      {}", entity_name));
-        let is_clicked = selectable.clicked();
-
-        selectable.context_menu(|ui| {
-            hierarchy_entity_context(
-                ui,
-                commands,
-                entity,
-                changes,
-                clone_events,
-                selected,
-                parent,
-                prefab_made,
-            );
-        });
+        }
 
         if is_clicked {
             if is_selected {
@@ -212,7 +275,7 @@ fn draw_entity<F: ReadOnlyWorldQuery>(
 
                 //check shift pressed
                 if !ui.input(|i| i.modifiers.shift) {
-                    selected.for_each(|e| {
+                    selected.iter_mut().for_each(|e| {
                         commands.entity(e).remove::<Selected>();
                     })
                 }

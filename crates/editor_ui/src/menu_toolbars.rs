@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bevy::prelude::*;
-use bevy_egui_next::{
+use bevy_egui::{
     egui::{Align, Align2, Margin, Pos2, Stroke, Widget},
     *,
 };
@@ -10,7 +10,7 @@ use space_editor_core::{
     prelude::*,
     toast::{ClearToastMessage, ToastStorage},
 };
-use space_prefab::plugins::PrefabPlugin;
+use space_prefab::{component::GltfPrefab, load::PrefabBundle, plugins::PrefabPlugin};
 use space_shared::{ext::egui_file, *};
 use space_undo::{AddedEntity, NewChange, RemovedEntity};
 
@@ -18,8 +18,9 @@ use crate::{
     colors::*,
     hierarchy::{HierarchyQueryIter, HierarchyTabState},
     icons::{add_bundle_icon, add_entity_icon, delete_entity_icon, prefab_icon},
-    sizing::{to_label, to_richtext, Sizing},
+    sizing::{to_colored_richtext, to_label, to_richtext, Sizing},
     ui_registration::{BundleReg, EditorBundleUntyped},
+    ShowEditorUi,
 };
 
 /// Plugin to activate bottom menu in editor UI
@@ -30,16 +31,23 @@ impl Plugin for BottomMenuPlugin {
         if !app.is_plugin_added::<PrefabPlugin>() {
             app.add_plugins(PrefabPlugin);
         }
+
         app.init_resource::<EditorLoader>();
         app.init_resource::<MenuToolbarState>();
 
         app.add_systems(
             Update,
-            bottom_menu.before(EditorLoadSet).in_set(EditorSet::Editor),
+            bottom_menu
+                .before(EditorLoadSet)
+                .in_set(EditorSet::Editor)
+                .run_if(in_state(EditorState::Editor).and_then(in_state(ShowEditorUi::Show))),
         );
         app.add_systems(
             Update,
-            top_menu.before(EditorLoadSet).in_set(EditorSet::Editor),
+            top_menu
+                .before(EditorLoadSet)
+                .in_set(EditorSet::Editor)
+                .run_if(in_state(EditorState::Editor).and_then(in_state(ShowEditorUi::Show))),
         );
         app.add_systems(Update, in_game_menu.in_set(EditorSet::Game));
         app.add_event::<MenuLoadEvent>();
@@ -70,7 +78,7 @@ fn in_game_menu(
     sizing: Res<Sizing>,
 ) {
     egui::TopBottomPanel::top("top_gameplay_panel")
-        .exact_height(&sizing.icon.to_size() + 4.)
+        .min_height(&sizing.icon.to_size() + 8.)
         .show(ctxs.ctx_mut(), |ui| {
             let frame_duration = time.delta();
             if !time.is_paused() {
@@ -79,6 +87,7 @@ fn in_game_menu(
             let layout = egui::Layout::left_to_right(Align::Center).with_main_align(Align::Center);
             ui.with_layout(layout, |ui| {
                 ui.label(format!("FPS: {:04.0}", 1.0 / *smoothed_dt));
+
                 let distance = ui.available_width() / 2. - 64.;
                 ui.add_space(distance);
                 let button = if time.is_paused() {
@@ -86,9 +95,6 @@ fn in_game_menu(
                 } else {
                     to_richtext("⏸", &sizing.icon)
                 };
-                if ui.button(to_richtext("⏮", &sizing.icon)).clicked() {
-                    time.advance_by(frame_duration.mul_f32(-1.));
-                }
                 if ui.button(button).clicked() {
                     if time.is_paused() {
                         time.unpause();
@@ -99,7 +105,11 @@ fn in_game_menu(
                 if ui.button(to_richtext("⏹", &sizing.icon)).clicked() {
                     state.set(EditorState::Editor);
                 }
-                if ui.button(to_richtext("⏭", &sizing.icon)).clicked() {
+                if ui
+                    .button(to_richtext("⏭", &sizing.icon))
+                    .on_hover_text("Step by delta time")
+                    .clicked()
+                {
                     time.advance_by(frame_duration);
                 }
 
@@ -132,6 +142,7 @@ pub struct MenuToolbarState {
     pub gltf_dialog: Option<egui_file::FileDialog>,
     pub save_dialog: Option<egui_file::FileDialog>,
     pub load_dialog: Option<egui_file::FileDialog>,
+    pub subscene_dialog: Option<egui_file::FileDialog>,
     show_toasts: bool,
     pub path: String,
 }
@@ -149,9 +160,9 @@ pub fn bottom_menu(
 ) {
     let ctx = ctxs.ctx_mut();
     egui::TopBottomPanel::bottom("bottom_menu")
-        .exact_height(&sizing.icon.to_size().max(sizing.text) + 4.)
+        .min_height(&sizing.icon.to_size().max(sizing.text) + 4.)
         .show(ctx, |ui| {
-            ui.style_mut().spacing.menu_margin = Margin::symmetric(16., 4.);
+            ui.style_mut().spacing.menu_margin = Margin::symmetric(16., 8.);
             egui::menu::bar(ui, |ui| {
                 let stl = ui.style_mut();
                 stl.spacing.button_padding = egui::Vec2::new(8., 2.);
@@ -261,6 +272,7 @@ pub fn bottom_menu(
 }
 
 pub fn top_menu(
+    mut commands: Commands,
     mut ctxs: EguiContexts,
     _state: ResMut<NextState<EditorState>>,
     mut events: EventReader<MenuLoadEvent>,
@@ -273,9 +285,9 @@ pub fn top_menu(
 ) {
     let ctx = ctxs.ctx_mut();
     egui::TopBottomPanel::top("top_menu_bar")
-        .exact_height(&sizing.icon.to_size() + 4.)
+        .min_height(&sizing.icon.to_size() + 8.)
         .show(ctx, |ui| {
-            ui.style_mut().spacing.menu_margin = Margin::symmetric(16., 4.);
+            ui.style_mut().spacing.menu_margin = Margin::symmetric(16., 8.);
             egui::menu::bar(ui, |ui| {
                 let stl = ui.style_mut();
                 stl.spacing.button_padding = egui::Vec2::new(8., 4.);
@@ -462,15 +474,65 @@ pub fn top_menu(
                 }
                 // End Open GLTF
 
+                //Open subscene
+                let subscene_button = egui::Button::new(to_richtext("📦", &sizing.icon))
+                    .stroke(stroke_default_color());
+                if ui
+                    .add(subscene_button)
+                    .on_hover_text("Open subscene")
+                    .clicked()
+                {
+                    let mut filedialog = egui_file::FileDialog::open_file(Some("assets".into()))
+                        .show_files_filter(Box::new(|path| {
+                            path.to_str().unwrap().ends_with(".scn.ron")
+                                || path.to_str().unwrap().ends_with(".gltf")
+                                || path.to_str().unwrap().ends_with(".glb")
+                        }))
+                        .title("Open Subscene (.scn.ron, .gltf, .glb)");
+                    filedialog.open();
+
+                    menu_state.subscene_dialog = Some(filedialog);
+                }
+
+                if let Some(subscene_dialog) = &mut menu_state.subscene_dialog {
+                    if subscene_dialog.show(ctx).selected() {
+                        if let Some(file) = subscene_dialog.path() {
+                            let mut path = file.to_str().unwrap().to_string();
+                            info!("path: {}", path);
+                            if path.starts_with("assets") {
+                                path = path.replace("assets", "");
+                                path = path.trim_start_matches('\\').to_string();
+                                path = path.trim_start_matches('/').to_string();
+
+                                if path.ends_with(".scn.ron") {
+                                    commands.spawn((PrefabBundle::new(&path), PrefabMarker));
+                                } else if path.ends_with(".gltf") || path.ends_with(".glb") {
+                                    commands.spawn((
+                                        SpatialBundle::default(),
+                                        GltfPrefab {
+                                            path,
+                                            scene: "Scene0".into(),
+                                        },
+                                        PrefabMarker,
+                                    ));
+                                } else {
+                                    error!("Unknown file type: {}", path);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 let width = ui.available_width();
                 let distance = width / 2. - 40.;
                 ui.add_space(distance);
-                let play_button = egui::Button::new(to_richtext("▶", &sizing.icon))
-                    .fill(SPECIAL_BG_COLOR)
-                    .stroke(Stroke {
-                        width: 1.,
-                        color: SELECTED_ITEM_COLOR,
-                    });
+                let play_button =
+                    egui::Button::new(to_colored_richtext("▶", &sizing.icon, PLAY_COLOR))
+                        .fill(SPECIAL_BG_COLOR)
+                        .stroke(Stroke {
+                            width: 1.,
+                            color: STROKE_COLOR,
+                        });
                 if ui.add(play_button).clicked() {
                     editor_events.send(EditorEvent::StartGame);
                 }
@@ -486,7 +548,7 @@ pub fn top_menu(
                             .show(ctx, |ui| {
                                 ui.vertical_centered_justified(|ui| {
                                     if ui.add(egui::Button::new("Clear all 🗑")).clicked() {
-                                        clear_toast.send(ClearToastMessage::all())
+                                        clear_toast.send(ClearToastMessage::all());
                                     };
                                 });
                                 egui::Grid::new("error_console_log").show(ui, |ui| {
@@ -496,7 +558,7 @@ pub fn top_menu(
                                         ui.label(RichText::new("ERROR").color(ERROR_COLOR));
                                         ui.label(error);
                                         if ui.button("🗙").clicked() {
-                                            clear_toast.send(ClearToastMessage::error(index))
+                                            clear_toast.send(ClearToastMessage::error(index));
                                         }
                                         ui.end_row();
                                     }
@@ -506,7 +568,7 @@ pub fn top_menu(
                                         ui.label(RichText::new("WARN ").color(WARM_COLOR));
                                         ui.label(warning);
                                         if ui.button("🗙").clicked() {
-                                            clear_toast.send(ClearToastMessage::warn(index))
+                                            clear_toast.send(ClearToastMessage::warn(index));
                                         }
                                         ui.end_row();
                                     }
@@ -516,7 +578,11 @@ pub fn top_menu(
                     if ui
                         .button(
                             RichText::new(format!("⚠ {}", toasts.toasts_per_kind.warning.len()))
-                                .color(WARM_COLOR),
+                                .color(if toasts.has_toasts() {
+                                    WARM_COLOR
+                                } else {
+                                    STROKE_COLOR
+                                }),
                         )
                         .clicked()
                     {
@@ -525,7 +591,11 @@ pub fn top_menu(
                     if ui
                         .button(
                             RichText::new(format!("🚫 {}", toasts.toasts_per_kind.error.len()))
-                                .color(ERROR_COLOR),
+                                .color(if toasts.has_toasts() {
+                                    ERROR_COLOR
+                                } else {
+                                    STROKE_COLOR
+                                }),
                         )
                         .clicked()
                     {
